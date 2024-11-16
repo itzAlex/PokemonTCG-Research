@@ -52,10 +52,13 @@ o4iQjPVju0CT
 -----END CERTIFICATE-----
 `
 
-const bypassSSLPinning = false;
+const bypassSSLPinning  = false;
+const interceptProtobuf = false;
+const requestsOnTheFly  = true;
 
 Il2Cpp.perform(() => {
 
+  // Bypass SSL pinning
   if (bypassSSLPinning) {
     const GrpLib = Il2Cpp.domain.assembly("Grpc.Core").image;
     const SslCredentials = GrpLib.class("Grpc.Core.SslCredentials");
@@ -64,118 +67,139 @@ Il2Cpp.perform(() => {
     );
 
     if (!SslCredentialsCtor) {
-      console.error("Constructor with 3 parameters not found, aborting...");
-      return;
-    }
-
-    // @ts-ignore
-    SslCredentialsCtor.implementation = function(...args: any[]) {
-      console.log("Changing root certificates...")
+      console.error("⚠ The function in charge of trusted certificates could not be found, aborting...");
+    } else {
       // @ts-ignore
-      this.field<string>("rootCertificates").value = Il2Cpp.string(proxyCertificate);
-    }
-  }
-
-  // Hook only DLLs where important requests are performed
-  const libraries = {
-    TakashoLib: "Takasho.ProtobufGenerated",
-    TakashoKernelLib: "Takasho.ProtobufKernel.dll",
-    SharinLib: "Sharin.Portable.Foundation.Runtime.dll",
-    BattleLib: "Lettuce.Infrastructure.BattlePvP.dll",
-    SummaryLib: "Lettuce.BattleEngine.Summary.Runtime.dll",
-    SerializationLib: "Lettuce.BattleEngine.Serialization.Runtime.dll",
-    BattleSchemaLib: "Lettuce.BattleEngine.BattleSchema.Proto.dll"
+      SslCredentialsCtor.implementation = function(...args: any[]) {
+        console.log("🛈 Modifying root certificates to bypass SSL pinning")
+        // @ts-ignore
+        this.field<string>("rootCertificates").value = Il2Cpp.string(proxyCertificate);
+      };
+    };
   };
 
-  // Extract classes for each assembly
-  const classes = Object.fromEntries(
-    Object.entries(libraries).map(([name, assembly]) => [name, Il2Cpp.domain.assembly(assembly).image.classes])
-  );
+  // Intercept gRPC requests with Protobuf messages
+  if (interceptProtobuf) {
+    // Hook only DLLs where important requests are performed
+    const libraries = {
+      TakashoLib: "Takasho.ProtobufGenerated",
+      TakashoKernelLib: "Takasho.ProtobufKernel.dll",
+      SharinLib: "Sharin.Portable.Foundation.Runtime.dll",
+      BattleLib: "Lettuce.Infrastructure.BattlePvP.dll",
+      SummaryLib: "Lettuce.BattleEngine.Summary.Runtime.dll",
+      SerializationLib: "Lettuce.BattleEngine.Serialization.Runtime.dll",
+      BattleSchemaLib: "Lettuce.BattleEngine.BattleSchema.Proto.dll"
+    };
 
-  // Combine all classes into one array
-  // @ts-ignore
-  const allClasses: Class[] = Object.values(classes).flat();
+    // Extract classes for each assembly
+    const classes = Object.fromEntries(
+      Object.entries(libraries).map(([name, assembly]) => [name, Il2Cpp.domain.assembly(assembly).image.classes])
+    );
 
-  /*
-  Example:
-
-  namespace Takasho.Schema.LettuceServer.PlayerApi
-  {
-    public sealed class SystemAuthorizeV1 : 
-      IMessage<SystemAuthorizeV1>,
-      IMessage,
-      IEquatable<SystemAuthorizeV1>,
-      IDeepCloneable<SystemAuthorizeV1>,
-      IBufferMessage
-    {
-    ...
-      public static class Types
-      {
-        public sealed class Request : 
-          IMessage<SystemAuthorizeV1.Types.Request>,
-          IMessage,
-          IEquatable<SystemAuthorizeV1.Types.Request>,
-          IDeepCloneable<SystemAuthorizeV1.Types.Request>,
-          IBufferMessage
-        {
-          ...
-          public void WriteTo(CodedOutputStream output) { }
-          ...
-        }
-        public sealed class Response : 
-          IMessage<SystemAuthorizeV1.Types.Response>,
-          IMessage,
-          IEquatable<SystemAuthorizeV1.Types.Response>,
-          IDeepCloneable<SystemAuthorizeV1.Types.Response>,
-          IBufferMessage
-        {
-          ...
-          public void MergeFrom(CodedInputStream input) { }
-          ...
-        }
-      }
-    }
-  }
-  */
-
-  allClasses.forEach(cls => {
-    // Obtain root class name with a maximum depth of 2
-    let mainClass = cls;
-    let depth = 0;
-    while (mainClass.declaringClass && depth < 2) {
-      mainClass = mainClass.declaringClass;
-      depth++;
-    }
-
+    // Combine all classes into one array
     // @ts-ignore
-    cls.methods.forEach(method => {
-      if (method.name === "MergeFrom" && cls.name === "Response") {
-        // Hook MergeFrom method
-        // @ts-ignore
-        method.implementation = function (CodedInputStream) {
+    const allClasses: Class[] = Object.values(classes).flat();
+
+    
+    // Example:
+    // 
+    // namespace Takasho.Schema.LettuceServer.PlayerApi
+    // {
+    //   public sealed class SystemAuthorizeV1 : 
+    //     IMessage<SystemAuthorizeV1>,
+    //     IMessage,
+    //     IEquatable<SystemAuthorizeV1>,
+    //     IDeepCloneable<SystemAuthorizeV1>,
+    //     IBufferMessage
+    //   {
+    //   ...
+    //     public static class Types
+    //     {
+    //       public sealed class Request : 
+    //         IMessage<SystemAuthorizeV1.Types.Request>,
+    //         IMessage,
+    //         IEquatable<SystemAuthorizeV1.Types.Request>,
+    //         IDeepCloneable<SystemAuthorizeV1.Types.Request>,
+    //         IBufferMessage
+    //       {
+    //         ...
+    //         public void WriteTo(CodedOutputStream output) { }
+    //         ...
+    //       }
+    //       public sealed class Response : 
+    //         IMessage<SystemAuthorizeV1.Types.Response>,
+    //         IMessage,
+    //         IEquatable<SystemAuthorizeV1.Types.Response>,
+    //         IDeepCloneable<SystemAuthorizeV1.Types.Response>,
+    //         IBufferMessage
+    //       {
+    //         ...
+    //         public void MergeFrom(CodedInputStream input) { }
+    //         ...
+    //       }
+    //     }
+    //   }
+    // }
+
+    // Intercept gRPC requests
+    let methodsCount = 0;
+    allClasses.forEach(cls => {
+      // Obtain root class name with a maximum depth of 2
+      let mainClass = cls;
+      let depth = 0;
+      while (mainClass.declaringClass && depth < 2) {
+        mainClass = mainClass.declaringClass;
+        depth++;
+      };
+
+      // @ts-ignore
+      cls.methods.forEach(method => {
+        if (method.name === "MergeFrom" && cls.name === "Response") {
+          // Hook MergeFrom method
           // @ts-ignore
-          this.method<Il2Cpp.Object>("MergeFrom").overload("Google.Protobuf.CodedInputStream").invoke(CodedInputStream);
+          method.implementation = function (CodedInputStream) {
+            // @ts-ignore
+            this.method<void>("MergeFrom").overload("Google.Protobuf.CodedInputStream").invoke(CodedInputStream);
+            // @ts-ignore
+            const body = this.method<string>("ToString").invoke().content;
+            const bodyJson = JSON.stringify(JSON.parse(body), null, 2);
+            console.log(`\n↩ Response from gRPC endpoint: ${mainClass.name}\n${"-".repeat(30)}\n${bodyJson}`);
+          };
+          methodsCount += 1;
+        } else if (method.name === "WriteTo" && cls.name === "Request") {
+          // Hook WriteTo method
           // @ts-ignore
-          const body = this.method<string>("ToString").invoke().content;
-          const bodyJson = JSON.stringify(JSON.parse(body), null, 2);
-          console.log(`\n[◄] Request FROM gRPC endpoint: ${mainClass.name}\n-------------------------\n${bodyJson}`);
+          method.implementation = function (CodedOutputStream) {
+            // @ts-ignore
+            this.method<void>("WriteTo").overload("Google.Protobuf.CodedOutputStream").invoke(CodedOutputStream);
+            // @ts-ignore
+            const body = this.method<string>("ToString").invoke().content;
+            const bodyJson = JSON.stringify(JSON.parse(body), null, 2);
+            console.log(`\n↪ Request to gRPC endpoint: ${mainClass.name}\n${"-".repeat(30)}\n${bodyJson}`);
+          };
+          methodsCount += 1;
         };
-        // @ts-ignore
-        console.log(`Hooked responses in class ${mainClass.name}`);
-      } else if (method.name === "WriteTo" && cls.name === "Request") {
-        // Hook WriteTo method
-        // @ts-ignore
-        method.implementation = function (CodedOutputStream) {
-          // @ts-ignore
-          this.method<Il2Cpp.Object>("WriteTo").overload("Google.Protobuf.CodedOutputStream").invoke(CodedOutputStream);
-          // @ts-ignore
-          const body = this.method<string>("ToString").invoke().content;
-          const bodyJson = JSON.stringify(JSON.parse(body), null, 2);
-          console.log(`\n[►] Request TO gRPC endpoint: ${mainClass.name}\n-------------------------\n${bodyJson}`);
-        };
-        // @ts-ignore
-        console.log(`Hooked requests in class ${mainClass.name}`);
-      }
+      });
     });
-  });
+    console.log(`🛈 Hooked ${methodsCount} functions with gRPC requests`);
+  };
+
+  // Modify requests on the fly
+  if (requestsOnTheFly) {
+    // Extract classes from API wrapper
+    const APIWrapperClasses = Il2Cpp.domain.assembly("Lettuce.Takasho.Impl.TakashoWrapper.ApiWrapper.dll").image.classes;
+
+    APIWrapperClasses.forEach(cls => {
+      cls.methods.forEach(method => {
+        if (method.name == "CallApi") {
+          // Hook call to the API
+          // @ts-ignore
+          method.implementation = function (apiCallContext, request, option, token) {
+            // TODO: Create API to modify requests
+            return this.method("CallApi").invoke(apiCallContext, request, option, token);
+          };
+        };
+      });
+    });
+  };
 });
