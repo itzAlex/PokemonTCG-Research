@@ -1,4 +1,6 @@
-package-lock.json
-node_modules/
-logs/
-_agent.js
+Frida/package-lock.json
+Frida/node_modules/
+Frida/logs/
+Frida/_agent.js
+InterceptorWeb/node_modules/
+InterceptorWeb/package-lock.json

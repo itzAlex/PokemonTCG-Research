@@ -1,0 +1,214 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pokémon TCG - Request interceptor</title>
+  <!-- CodeMirror CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/theme/darcula.min.css">
+  <style>
+    body {
+      background-color: #1e1e1e;
+      color: #d4d4d4;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    .switch {
+      display: flex;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .switch input {
+      margin-right: 10px;
+    }
+    .title {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .CodeMirror {
+      height: 400px;
+      border: 1px solid #ccc;
+    }
+    .error {
+      color: #f48771;
+      margin-top: 10px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      background-color: #007acc;
+      color: #ffffff;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled {
+      background-color: #555555;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="switch">
+    <label>
+      <input type="checkbox" id="interceptSwitch" checked>
+      Intercept ON
+    </label>
+  </div>
+
+  <div class="title" id="jsonTitle"></div>
+  <!-- CodeMirror Editor Container -->
+  <textarea id="jsonEditor"></textarea>
+  <div class="error" id="errorMsg"></div>
+  <button id="submitBtn" disabled>Submit modified JSON</button>
+
+  <!-- Include Socket.io -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Include CodeMirror JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/codemirror.min.js"></script>
+  <!-- Include JSON Mode for CodeMirror -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/mode/javascript/javascript.min.js"></script>
+  <!-- Include CodeMirror Theme (optional) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.10/theme/darcula.min.js"></script>
+  <script>
+    const socket = io();
+
+    const interceptSwitch = document.getElementById('interceptSwitch');
+    const errorMsg = document.getElementById('errorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+    const jsonTitle = document.getElementById('jsonTitle');
+
+    let currentRequestId = null;
+    let originalJson = null;
+
+    // Initialize CodeMirror editor
+    const editor = CodeMirror.fromTextArea(document.getElementById('jsonEditor'), {
+      mode: { name: "javascript", json: true },
+      theme: "darcula",
+      lineNumbers: true,
+      indentUnit: 2,
+      tabSize: 2,
+      autoCloseBrackets: true,
+      readOnly: false, // Initially editable
+    });
+
+    // Update intercept switch status
+    socket.on('interceptStatus', (status) => {
+      interceptSwitch.checked = status;
+      interceptSwitch.nextSibling.textContent = `Intercept ${status ? 'ON' : 'OFF'}`;
+
+      if (!status) {
+        // Intercept is OFF
+        disableEditor();
+      } else {
+        // Intercept is ON
+        enableEditor();
+      }
+    });
+
+    // Handle new data
+    socket.on('interceptData', ({ requestId, jsonData, title }) => {
+      currentRequestId = requestId;
+      originalJson = jsonData;
+      jsonTitle.textContent = title;
+
+      if (interceptSwitch.checked) {
+        // Intercept is ON
+        const formattedJson = JSON.stringify(jsonData, null, 2);
+        editor.setValue(formattedJson);
+        editor.setOption('readOnly', false);
+        validateJson();
+      } else {
+        // Intercept is OFF
+        // Send back the original JSON immediately
+        socket.emit('modifiedJson', {
+          requestId: currentRequestId,
+          modifiedJson: originalJson,
+        });
+        resetEditor();
+      }
+    });
+
+    // Toggle intercept switch
+    interceptSwitch.addEventListener('change', (e) => {
+      const status = e.target.checked;
+      e.target.nextSibling.textContent = `Intercept ${status ? 'ON' : 'OFF'}`;
+      socket.emit('toggleIntercept', status);
+
+      if (!status) {
+        // Intercept is OFF
+        disableEditor();
+
+        // If there is a pending request, send back the original JSON
+        if (currentRequestId !== null) {
+          socket.emit('modifiedJson', {
+            requestId: currentRequestId,
+            modifiedJson: originalJson, // Send back the original JSON
+          });
+          resetEditor();
+        }
+      } else {
+        // Intercept is ON
+        enableEditor();
+      }
+    });
+
+    // Validate JSON input
+    editor.on('change', validateJson);
+
+    function validateJson() {
+      const jsonText = editor.getValue();
+      try {
+        JSON.parse(jsonText);
+        errorMsg.textContent = '';
+        submitBtn.disabled = false;
+      } catch (e) {
+        if (jsonText === '') {
+          errorMsg.textContent = '';
+        } else {
+          errorMsg.textContent = 'Invalid JSON';
+        }
+        submitBtn.disabled = true;
+      }
+    }
+
+    // Submit modified JSON
+    submitBtn.addEventListener('click', () => {
+      const jsonText = editor.getValue();
+      try {
+        const modifiedJson = JSON.parse(jsonText);
+        socket.emit('modifiedJson', {
+          requestId: currentRequestId,
+          modifiedJson,
+        });
+        resetEditor();
+      } catch (e) {
+        errorMsg.textContent = 'Invalid JSON';
+      }
+    });
+
+    function resetEditor() {
+      currentRequestId = null;
+      originalJson = null;
+      jsonTitle.textContent = '';
+      editor.setValue('');
+      submitBtn.disabled = true;
+      errorMsg.textContent = '';
+    }
+
+    function disableEditor() {
+      editor.setOption('readOnly', true);
+      editor.setValue('');
+      jsonTitle.textContent = '';
+      submitBtn.disabled = true;
+      errorMsg.textContent = '';
+    }
+
+    function enableEditor() {
+      editor.setOption('readOnly', false);
+    }
+  </script>
+</body>
+</html>
