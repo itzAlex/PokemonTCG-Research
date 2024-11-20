@@ -53,10 +53,28 @@ o4iQjPVju0CT
 `
 
 const bypassSSLPinning  = false;
-const interceptProtobuf = false;
-const requestsOnTheFly  = true;
+const interceptProtobuf = true;
+const requestsOnTheFly  = false;
 
-Il2Cpp.perform(() => {
+setTimeout(() => Il2Cpp.perform(() => {
+
+  if (bypassSSLPinning) {
+    console.log("🛈 SSL pinning bypass module: Enabled ✅")
+  } else {
+    console.log("🛈 SSL pinning bypass module: Disabled ❌")
+  }
+
+  if (interceptProtobuf) {
+    console.log("🛈 Show Protobuf messages in plaintext: Enabled ✅")
+  } else {
+    console.log("🛈 Show Protobuf messages in plaintext: Disabled ❌")
+  }
+
+  if (requestsOnTheFly) {
+    console.log("🛈 Modify requests on the fly module: Enabled ✅")
+  } else {
+    console.log("🛈 Modify requests on the fly module: Disabled❌")
+  }
 
   // Bypass SSL pinning
   if (bypassSSLPinning) {
@@ -67,11 +85,11 @@ Il2Cpp.perform(() => {
     );
 
     if (!SslCredentialsCtor) {
-      console.error("⚠ The function in charge of trusted certificates could not be found, aborting...");
+      console.error("⚠  The function in charge of trusted certificates could not be found, aborting...");
     } else {
       // @ts-ignore
       SslCredentialsCtor.implementation = function(...args: any[]) {
-        console.log("🛈 Modifying root certificates to bypass SSL pinning")
+        console.log("\n🛈 Modifying root certificates to bypass SSL pinning")
         // @ts-ignore
         this.field<string>("rootCertificates").value = Il2Cpp.string(proxyCertificate);
       };
@@ -102,10 +120,10 @@ Il2Cpp.perform(() => {
 
     
     // Example:
-    // 
+    //
     // namespace Takasho.Schema.LettuceServer.PlayerApi
     // {
-    //   public sealed class SystemAuthorizeV1 : 
+    //   public sealed class SystemAuthorizeV1 :
     //     IMessage<SystemAuthorizeV1>,
     //     IMessage,
     //     IEquatable<SystemAuthorizeV1>,
@@ -115,7 +133,7 @@ Il2Cpp.perform(() => {
     //   ...
     //     public static class Types
     //     {
-    //       public sealed class Request : 
+    //       public sealed class Request :
     //         IMessage<SystemAuthorizeV1.Types.Request>,
     //         IMessage,
     //         IEquatable<SystemAuthorizeV1.Types.Request>,
@@ -126,7 +144,7 @@ Il2Cpp.perform(() => {
     //         public void WriteTo(CodedOutputStream output) { }
     //         ...
     //       }
-    //       public sealed class Response : 
+    //       public sealed class Response :
     //         IMessage<SystemAuthorizeV1.Types.Response>,
     //         IMessage,
     //         IEquatable<SystemAuthorizeV1.Types.Response>,
@@ -163,7 +181,7 @@ Il2Cpp.perform(() => {
             // @ts-ignore
             const body = this.method<string>("ToString").invoke().content;
             const bodyJson = JSON.stringify(JSON.parse(body), null, 2);
-            console.log(`\n↩ Response from gRPC endpoint: ${mainClass.name}\n${"-".repeat(30)}\n${bodyJson}`);
+            console.log(`\n↩  Response from gRPC endpoint: ${mainClass.name}\n${"-".repeat(30)}\n${bodyJson}`);
           };
           methodsCount += 1;
         } else if (method.name === "WriteTo" && cls.name === "Request") {
@@ -175,7 +193,7 @@ Il2Cpp.perform(() => {
             // @ts-ignore
             const body = this.method<string>("ToString").invoke().content;
             const bodyJson = JSON.stringify(JSON.parse(body), null, 2);
-            console.log(`\n↪ Request to gRPC endpoint: ${mainClass.name}\n${"-".repeat(30)}\n${bodyJson}`);
+            console.log(`\n↪  Request to gRPC endpoint: ${mainClass.name}\n${"-".repeat(30)}\n${bodyJson}`);
           };
           methodsCount += 1;
         };
@@ -192,14 +210,59 @@ Il2Cpp.perform(() => {
     APIWrapperClasses.forEach(cls => {
       cls.methods.forEach(method => {
         if (method.name == "CallApi") {
-          // Hook call to the API
           // @ts-ignore
           method.implementation = function (apiCallContext, request, option, token) {
-            // TODO: Create API to modify requests
-            return this.method("CallApi").invoke(apiCallContext, request, option, token);
+            // Send the request data to the host script
+            send({ jsonData: request.toString(), title: 'Intercepted Request' });
+
+            // Wait for the modified JSON from the host script
+            let modifiedJsonString: any = null;
+
+            recv('modifiedJson', (message) => {
+              modifiedJsonString = JSON.stringify(message.payload);
+            }).wait();
+
+            // Since the original JSON has some spaces this trick will convert it to a similar JSON as the one modified
+            if (JSON.stringify(JSON.parse(request.toString())) === modifiedJsonString) {
+              return this.method("CallApi").invoke(apiCallContext, request, option, token);
+            }
+
+            // Request has been modified
+            console.log("\n🛈  Request has been modified");
+
+            // Deserialize the modified JSON back into a Request object
+            // Access the Parser field
+            // @ts-ignore
+            const getParserMethod = request.class.methods.find(m => m.name === "get_Parser" && m.parameterCount === 0);
+
+            // Parser getter method not found
+            if (!getParserMethod) {
+              console.error("⚠  Failed to find parser method to obtain the Protobuf parser")
+              return this.method("CallApi").invoke(apiCallContext, request, option, token);
+            }
+
+            // Parser getter method found
+            const parser = getParserMethod.invoke();
+
+            // Get the 'ParseJson' method
+            // @ts-ignore
+            const parseJsonMethod = parser.class.methods.find(m => m.name === "ParseJson" && m.parameterCount === 1);
+
+            // Parser getter method not found
+            if (!parseJsonMethod) {
+              console.error("⚠  Failed to find parser method to convert JSON back to a request class")
+              return this.method("CallApi").invoke(apiCallContext, request, option, token);
+            }
+
+            // Parse the modified JSON string
+            // @ts-ignore
+            const modifiedRequest = parser.method("ParseJson").invoke(Il2Cpp.string(modifiedJsonString));
+
+            // Proceed with the modified request
+            return this.method("CallApi").invoke(apiCallContext, modifiedRequest, option, token);
           };
         };
       });
     });
   };
-});
+}), 5000);
