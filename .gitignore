@@ -4,3 +4,4 @@ Frida/logs/
 Frida/_agent.js
 InterceptorWeb/node_modules/
 InterceptorWeb/package-lock.json
+AssetExtractor/

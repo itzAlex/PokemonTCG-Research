@@ -15,6 +15,27 @@ process.removeAllListeners('warning');
   const agentCode = fs.readFileSync('_agent.js', 'utf8');
 
   const script = await session.createScript(agentCode);
+  const antitamperScript = await session.createScript(`
+    Java.perform(function () {
+      // Path to BootSequenceUserPrefs file
+      var BootSequenceUserPrefs = "/data/data/jp.pokemon.pokemontcgp/files/UserPreferences/v1/BootSequenceUserPrefs";
+
+      // Check if the file exists
+      var File = Java.use('java.io.File');
+      var BootSequenceUserPrefsFile = File.$new(BootSequenceUserPrefs);
+
+      if (BootSequenceUserPrefsFile.exists()) {
+        console.log("⚠  The BootSequenceUserPrefs file exists, deleting it so that the game does not crash")
+        // Attempt to delete the file
+        var deleted = BootSequenceUserPrefsFile.delete();
+        if (deleted) {
+            console.log("🛈  Successfully deleted BootSequenceUserPrefs");
+        } else {
+            console.log("⚠  Failed to delete BootSequenceUserPrefs, do it manually!");
+        }
+      }
+    });
+  `);
 
   // Handle messages from the agent script
   script.message.connect(async (message) => {
@@ -44,7 +65,7 @@ process.removeAllListeners('warning');
     }
   });
 
+  console.log('🛈 Loading scripts\n');
+  await antitamperScript.load();
   await script.load();
-
-  console.log('🛈 Script loaded');
 })();

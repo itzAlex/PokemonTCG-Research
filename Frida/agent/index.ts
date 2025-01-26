@@ -54,7 +54,7 @@ o4iQjPVju0CT
 
 const bypassSSLPinning  = false;
 const interceptProtobuf = true;
-const requestsOnTheFly  = false;
+const requestsOnTheFly  = true;
 
 setTimeout(() => Il2Cpp.perform(() => {
 
@@ -73,7 +73,7 @@ setTimeout(() => Il2Cpp.perform(() => {
   if (requestsOnTheFly) {
     console.log("🛈 Modify requests on the fly module: Enabled ✅")
   } else {
-    console.log("🛈 Modify requests on the fly module: Disabled❌")
+    console.log("🛈 Modify requests on the fly module: Disabled ❌")
   }
 
   // Bypass SSL pinning
