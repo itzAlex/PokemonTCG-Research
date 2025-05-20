@@ -1,5 +1,7 @@
 # Pokémon TCG - Research tools
 
+Making public part of the tools developed after reporting several vulnerabilities by Bugcrowd.
+
 ## Description
 Right now there are two tools developed:
 * Frida script: SSL pinning bypass, view gRPC endpoint requests/responses in plain text and modify requests on the fly
